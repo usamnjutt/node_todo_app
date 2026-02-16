@@ -75,35 +75,34 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/todo-app:latest
 
-  # Stage 3: Verify Deployment
   verify:
     needs: deploy
     runs-on: ubuntu-latest
-    
+  
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Set up Docker Compose for verification
         run: |
-          docker-compose -f docker-compose.yml up -d
-          sleep 10  # Wait for services to start
+          docker compose up -d
+          sleep 15  # Wait for services to be ready
 
       - name: Test API endpoints
         run: |
-          # Test health endpoint
+          echo "🔍 Testing health endpoint..."
           curl -f http://localhost:3000/health || exit 1
-          
-          # Test creating a todo
+        
+          echo "📝 Creating a todo..."
           curl -X POST http://localhost:3000/todos \
             -H "Content-Type: application/json" \
-            -d '{"title":"Test todo"}' || exit 1
-          
-          # Test getting todos
+            -d '{"title":"GitHub Actions test"}' || exit 1
+        
+          echo "📋 Getting todos..."
           curl -f http://localhost:3000/todos || exit 1
-          
-          echo "✅ All tests passed!"
+        
+          echo "✅ All API tests passed!"
 
       - name: Clean up
         if: always()
-        run: docker-compose down
+        run: docker compose down
