@@ -1,0 +1,109 @@
+name: Multi-Stage Production Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  # Stage 1: Test with Database
+  test:
+    runs-on: ubuntu-latest
+    
+    # Service containers to run with the job
+    services:
+      # Label used to access the service container
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: mysecretpassword
+          POSTGRES_DB: todos_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+        env:
+          DB_USER: postgres
+          DB_HOST: localhost
+          DB_NAME: todos_test
+          DB_PASSWORD: mysecretpassword
+          DB_PORT: 5432
+
+  # Stage 2: Build and Deploy
+  deploy:
+    needs: test  # Only runs if tests pass
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/todo-app:latest
+
+  # Stage 3: Verify Deployment
+  verify:
+    needs: deploy
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Compose for verification
+        run: |
+          docker-compose -f docker-compose.yml up -d
+          sleep 10  # Wait for services to start
+
+      - name: Test API endpoints
+        run: |
+          # Test health endpoint
+          curl -f http://localhost:3000/health || exit 1
+          
+          # Test creating a todo
+          curl -X POST http://localhost:3000/todos \
+            -H "Content-Type: application/json" \
+            -d '{"title":"Test todo"}' || exit 1
+          
+          # Test getting todos
+          curl -f http://localhost:3000/todos || exit 1
+          
+          echo "✅ All tests passed!"
+
+      - name: Clean up
+        if: always()
+        run: docker-compose down
