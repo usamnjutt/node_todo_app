@@ -1,16 +1,19 @@
 {
   "name": "todo-app-backend",
   "version": "1.0.0",
-  "description": "Simple Todo API",
+  "description": "Simple Todo API with Monitoring",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Tests passed\" && exit 0"
+    "test": "echo \"Tests passed\" && exit 0",
+    "metrics": "curl http://localhost:3000/metrics | head -20"
   },
   "dependencies": {
     "express": "^4.18.2",
     "pg": "^8.11.0",
     "dotenv": "^16.0.3",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "prom-client": "^15.0.0",
+    "express-prom-bundle": "^7.0.0"
   }
 }
