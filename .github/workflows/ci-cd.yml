@@ -7,19 +7,15 @@ on:
     branches: [ main, master ]
 
 jobs:
-  # Stage 1: Test with Database
   test:
     runs-on: ubuntu-latest
-    
-    # Service containers to run with the job
     services:
-      # Label used to access the service container
       postgres:
         image: postgres:15-alpine
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: mysecretpassword
-          POSTGRES_DB: todos_test
+          POSTGRES_USER: ${{ secrets.DB_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.DB_TEST_NAME }}
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -29,46 +25,44 @@ jobs:
           - 5432:5432
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
+      - uses: actions/checkout@v3
+      
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
-
+          cache: 'npm'
+      
       - name: Install dependencies
         run: npm ci
-
+      
       - name: Run tests
         run: npm test
         env:
-          DB_USER: postgres
+          DB_USER: ${{ secrets.DB_USER }}
           DB_HOST: localhost
-          DB_NAME: todos_test
-          DB_PASSWORD: mysecretpassword
-          DB_PORT: 5432
+          DB_NAME: ${{ secrets.DB_TEST_NAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_PORT: ${{ secrets.DB_PORT }}
 
-  # Stage 2: Build and Deploy
   deploy:
-    needs: test  # Only runs if tests pass
+    needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
+      - uses: actions/checkout@v3
+      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
-
+      
       - name: Login to DockerHub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       
-      - name: Build and push Docker image
+      - name: Build and push
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -78,31 +72,50 @@ jobs:
   verify:
     needs: deploy
     runs-on: ubuntu-latest
-  
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Docker Compose for verification
+      - uses: actions/checkout@v3
+      
+      - name: Create .env file with secrets
+        run: |
+          echo "DB_USER=${{ secrets.DB_USER }}" >> .env
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+          echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
+          echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
+          echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
+          echo "PORT=3000" >> .env
+      
+      - name: Start services
         run: |
           docker compose up -d
-          sleep 15  # Wait for services to be ready
-
+          sleep 15
+      
+      - name: Run seed data
+        run: |
+          chmod +x seed-data.sh
+          ./seed-data.sh
+      
       - name: Test API endpoints
         run: |
-          echo "🔍 Testing health endpoint..."
-          curl -f http://localhost:3000/health || exit 1
-        
-          echo "📝 Creating a todo..."
+          echo "🔍 Health Check:"
+          curl -f http://localhost:3000/health
+          
+          echo -e "\n\n📋 Initial Todos:"
+          curl http://localhost:3000/todos | python3 -m json.tool
+          
+          echo -e "\n\n📝 Creating Todo:"
           curl -X POST http://localhost:3000/todos \
             -H "Content-Type: application/json" \
-            -d '{"title":"GitHub Actions test"}' || exit 1
-        
-          echo "📋 Getting todos..."
-          curl -f http://localhost:3000/todos || exit 1
-        
-          echo "✅ All API tests passed!"
-
+            -d '{"title":"Learn GitHub Secrets"}' | python3 -m json.tool
+          
+          echo -e "\n\n✅ Updating Todo (ID 1):"
+          curl -X PUT http://localhost:3000/todos/1 \
+            -H "Content-Type: application/json" \
+            -d '{"completed":true}' | python3 -m json.tool
+          
+          echo -e "\n\n📋 Final Todos:"
+          curl http://localhost:3000/todos | python3 -m json.tool
+      
       - name: Clean up
         if: always()
         run: docker compose down

@@ -3,15 +3,16 @@ services:
     image: postgres:15-alpine
     container_name: todo-postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: mysecretpassword
-      POSTGRES_DB: todos
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mysecretpassword}
+      POSTGRES_DB: ${DB_NAME:-todos}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -22,12 +23,8 @@ services:
     container_name: todo-app
     ports:
       - "3000:3000"
-    environment:
-      DB_USER: postgres
-      DB_HOST: postgres
-      DB_NAME: todos
-      DB_PASSWORD: mysecretpassword
-      DB_PORT: 5432
+    env_file:
+      - .env
     depends_on:
       postgres:
         condition: service_healthy

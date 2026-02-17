@@ -10,6 +10,9 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// Serve static files from public directory
+app.use(express.static('public'));
+
 // Database connection
 const pool = new Pool({
   user: process.env.DB_USER,
